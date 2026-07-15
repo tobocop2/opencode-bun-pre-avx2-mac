@@ -92,16 +92,29 @@ Yes — verified on two independent machines.
 
 **Real pre-AVX Mac** — Mac Pro 5,1, Xeon X5690 (Westmere, 2010), macOS 14.7.8, tested by [@WolfgangFahl](https://github.com/WolfgangFahl):
 
+He tested the **first** release (which fixed startup only) and reported:
+
+| test | first release, on his X5690 |
+|---|---|
+| `bun --version` | ✅ rc=0 |
+| JIT-heavy loop | ❌ rc=132 SIGILL |
+| `opencode --version` | ❌ rc=132 SIGILL |
+
+**This** release has not yet been confirmed on his machine — see the caveat below.
+
+**Apple M1 under Rosetta 2** (macOS 14.6.1) — Rosetta reports no AVX, so it reproduces the pre-AVX Mac case on hardware that can be rented. On the first release it reproduced his results exactly, which is what made it a usable proxy. On this release:
+
 | test | first release | **this release** |
 |---|---|---|
 | `bun --version` | ✅ rc=0 | ✅ rc=0 |
 | JIT-heavy loop | ❌ rc=132 SIGILL | ✅ rc=0 |
 | WebAssembly hot loop | ❌ rc=132 SIGILL | ✅ rc=0 |
 | `opencode --version` | ❌ rc=132 SIGILL | ✅ rc=0 |
+| 14-case suite (YarrJIT SIMD regex, strings/UTF-8, JSON, DFG/FTL tier-up, typed arrays) | ❌ SIGILL partway | ✅ ALL PASS |
 
-**Apple M1 under Rosetta 2** (macOS 14.6.1) — Rosetta reports no AVX, so it reproduces the pre-AVX Mac case on rentable hardware. Results match the X5690 exactly. A 14-case suite covering YarrJIT SIMD regex, strings/UTF-8, JSON, DFG/FTL tier-up and typed arrays: **all pass**; the previous release SIGILLs partway through the same suite on the same machine.
+**Caveat:** everything in the second table is Rosetta, not real Westmere silicon. Rosetta matched his machine on the first release, but the two could still diverge. A report from a real pre-AVX Mac on this release is the missing piece.
 
-Instruction profile of `libJavaScriptCore.a` (7,458,903 disassembled lines): **0** `%ymm` (a true baseline), **1** `xgetbv` (the runtime AVX check is present).
+Instruction profile of the WebKit archive: **0** `%ymm` (a true baseline) with the `xgetbv` runtime check present, and both probe trampolines exported — `ctiMasmProbeTrampolineAVX` now exists on Darwin for the first time.
 
 ## How they were built
 
@@ -112,7 +125,7 @@ Host: Ubuntu, x86_64. Both projects' own build scripts, plus the one open upstre
 ```bash
 git clone https://github.com/oven-sh/WebKit && cd WebKit
 git checkout 4895f45dfbd0d1226c4d41799887bc0ecb9f341b   # bun main's WEBKIT_VERSION
-# apply https://github.com/oven-sh/WebKit/pull/292  (8 insertions, 6 deletions)
+# apply https://github.com/oven-sh/WebKit/pull/292  (9 insertions, 21 deletions)
 MACOS_ARCH=x86_64 MARCH_FLAG="-march=nehalem" WEBKIT_RELEASE_TYPE=Release \
 USE_MIMALLOC=ON USE_EXTERNAL_MIMALLOC=ON bash macos-cross-release.sh
 ```
