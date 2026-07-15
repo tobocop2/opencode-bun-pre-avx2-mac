@@ -88,11 +88,9 @@ Found by [@WolfgangFahl](https://github.com/WolfgangFahl), who tested the previo
 
 ## Does it actually work?
 
-Yes — verified on two independent machines.
+The **diagnosis** is confirmed on two independent machines. **This build** is so far verified on one of them (Rosetta); a report from real pre-AVX silicon is still wanted.
 
-**Real pre-AVX Mac** — Mac Pro 5,1, Xeon X5690 (Westmere, 2010), macOS 14.7.8, tested by [@WolfgangFahl](https://github.com/WolfgangFahl):
-
-He tested the **first** release (which fixed startup only) and reported:
+**Real pre-AVX Mac** — Mac Pro 5,1, Xeon X5690 (Westmere, 2010), macOS 14.7.8, tested by [@WolfgangFahl](https://github.com/WolfgangFahl). He tested the **first** release (which fixed startup only) and reported:
 
 | test | first release, on his X5690 |
 |---|---|
