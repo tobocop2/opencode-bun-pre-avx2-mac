@@ -77,7 +77,7 @@ Bun Canary v1.4.0-canary.1 (1e3511800) macOS x64 (baseline)
 CPU: sse42 popcnt          <-- no AVX
 ```
 
-Fixed by [oven-sh/WebKit#292](https://github.com/oven-sh/WebKit/pull/292).
+The same assumption lives in a **second** place: JSC's probe trampoline uses `vmovaps` unconditionally on macOS. That one is reachable from WebAssembly (BBQ loop OSR entry, tier-up, and the catch prologue), so fixing only the feature detection left every WASM workload still crashing. Both are fixed by [oven-sh/WebKit#292](https://github.com/oven-sh/WebKit/pull/292).
 
 Found by [@WolfgangFahl](https://github.com/WolfgangFahl), who tested the previous release on a real Mac Pro 5,1 and reported that startup was fixed but JIT-heavy work still crashed — [opencode#8345](https://github.com/anomalyco/opencode/issues/8345#issuecomment-4977006296). That isolated it to the JIT rather than the build flags.
 
@@ -92,10 +92,11 @@ Yes — verified on two independent machines.
 
 **Real pre-AVX Mac** — Mac Pro 5,1, Xeon X5690 (Westmere, 2010), macOS 14.7.8, tested by [@WolfgangFahl](https://github.com/WolfgangFahl):
 
-| test | previous release | **this release** |
+| test | first release | **this release** |
 |---|---|---|
 | `bun --version` | ✅ rc=0 | ✅ rc=0 |
 | JIT-heavy loop | ❌ rc=132 SIGILL | ✅ rc=0 |
+| WebAssembly hot loop | ❌ rc=132 SIGILL | ✅ rc=0 |
 | `opencode --version` | ❌ rc=132 SIGILL | ✅ rc=0 |
 
 **Apple M1 under Rosetta 2** (macOS 14.6.1) — Rosetta reports no AVX, so it reproduces the pre-AVX Mac case on rentable hardware. Results match the X5690 exactly. A 14-case suite covering YarrJIT SIMD regex, strings/UTF-8, JSON, DFG/FTL tier-up and typed arrays: **all pass**; the previous release SIGILLs partway through the same suite on the same machine.
@@ -156,8 +157,8 @@ Also tracked in [bun#32512](https://github.com/oven-sh/bun/issues/32512), a guar
 - **WebKit**: `4895f45dfbd0d1226c4d41799887bc0ecb9f341b` + [#292](https://github.com/oven-sh/WebKit/pull/292).
 
 ```
-873868a92fc1de5eb3bbae81a85e234186eb00f2b51da956e1835017d813d824  bun-darwin-x64-baseline
-afe0fe21fc9b6ea43c33239aac990bb180c1025cc2d7044db5fab5ef4fc60915  opencode-darwin-x64-baseline
+e7ede2b3f9361f6a9875f75cd79c6d0d7c90af373c290fe207a3e3a80882aa01  bun-darwin-x64-baseline
+f425f035a5f00a93e1ba93d426e6687a0b58a1443b594ea75d8b35d99d11bd7f  opencode-darwin-x64-baseline
 ```
 
 ## License
