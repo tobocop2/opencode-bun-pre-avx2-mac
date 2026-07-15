@@ -1,103 +1,163 @@
-# macos-baseline-builds
+# opencode-bun-pre-avx2-mac
 
 **Baseline (non-AVX2) macOS x64 builds of bun and opencode**, for pre-Haswell Intel Macs — the builds that don't exist upstream.
 
 **⬇️ Download:** [Releases](../../releases/latest)
 
-> ⚠️ **Unofficial.** Not affiliated with oven-sh or anomalyco. Built from their own sources with their own build scripts. Provided as proof the builds are possible, and as a stopgap while the upstream PRs land.
+> ⚠️ **Unofficial.** Not affiliated with oven-sh or anomalyco. Built from their own sources with their own build scripts, plus one upstream patch that is open as a PR. Provided as proof the fix works, and as a stopgap until it lands.
+
+## Which Macs these work on
+
+| Your Mac | AVX | AVX2 | Status |
+|---|---|---|---|
+| **Sandy Bridge / Ivy Bridge** — 2011–2013, incl. Mac Pro 6,1, Macmini6,2, 2011 iMac | ✅ | ❌ | ✅ works |
+| **Westmere / Nehalem** — 2010 and older, typically via OpenCore | ❌ | ❌ | ✅ works — **verified on real hardware** |
+| Haswell (2013) and newer | ✅ | ✅ | not needed — use the official build |
+
+Not sure which you have?
+
+```bash
+sysctl -n machdep.cpu.brand_string
+sysctl -n hw.optional.avx1_0 hw.optional.avx2_0
+```
+
+Core 2 and older are out of scope: bun's baseline targets `-march=nehalem`, which needs SSE4.2.
 
 ## The problem
 
-If your Intel Mac predates Haswell (2013), `opencode` dies instantly with `SIGILL` — and the `-baseline` package that's supposed to save you is **the exact same binary**:
+On a pre-Haswell Intel Mac, `opencode` and `bun` die instantly with `SIGILL` — and the `-baseline` package that's supposed to save you is **the exact same binary**:
 
 ```
 5b051698544dd70a686e50cce37a6f97aa6742dd5d76a2374481e7ae546662ce  opencode-darwin-x64.zip
 5b051698544dd70a686e50cce37a6f97aa6742dd5d76a2374481e7ae546662ce  opencode-darwin-x64-baseline.zip
 ```
 
-Same file. Both AVX2. That's because bun's darwin packages are identical too:
+Same file. Both AVX2. bun's darwin packages are identical too:
 
 ```
 ea2f223e94bb2f4bf3050895113c3cf346438f6fa0501c8532284e063f72f7a0  @oven/bun-darwin-x64
 ea2f223e94bb2f4bf3050895113c3cf346438f6fa0501c8532284e063f72f7a0  @oven/bun-darwin-x64-baseline
 ```
 
-…which is because **oven-sh/WebKit never builds a baseline macOS WebKit**, so bun can't build a baseline macOS bun:
+Upstream reports: [bun#32511](https://github.com/oven-sh/bun/issues/32511), [bun#26872](https://github.com/oven-sh/bun/issues/26872), [bun#34215](https://github.com/oven-sh/bun/issues/34215), [opencode#8345](https://github.com/anomalyco/opencode/issues/8345), [opencode#29039](https://github.com/anomalyco/opencode/issues/29039), [opencode#24876](https://github.com/anomalyco/opencode/issues/24876).
+
+## The two bugs
+
+The SIGILL has **two independent causes**. These builds fix both.
+
+### 1. Startup — the Haswell WebKit
+
+bun links a *prebuilt* WebKit, and oven-sh/WebKit never built a baseline macOS one:
 
 ```
 bun-webkit-macos-amd64.tar.gz            HTTP 200
 bun-webkit-macos-amd64-baseline.tar.gz   HTTP 404
 ```
 
-Upstream reports: [opencode#29039](https://github.com/anomalyco/opencode/issues/29039), [opencode#24876](https://github.com/anomalyco/opencode/issues/24876).
+So the "baseline" bun linked the **Haswell** WebKit. Its `bmalloc` constructors use BMI2 (`shlx`) and run in a C++ static initializer **before `main()`** — so it crashed before anything else got a chance to.
 
-## What's here
+Fixed by building the Nehalem macOS WebKit → [oven-sh/WebKit#290](https://github.com/oven-sh/WebKit/pull/290).
 
-| artifact | what it is |
-|---|---|
-| `bun-darwin-x64-baseline` | bun built for `darwin-x64` at `-march=nehalem`, against a baseline macOS WebKit |
-| `opencode-darwin-x64-baseline` | opencode v1.18.1 compiled against that bun |
+### 2. Runtime — the JIT emitted AVX anyway
 
-Most people want the **opencode** one.
+Even with a fully Nehalem-built bun, JavaScriptCore hardcodes "AVX is available" on macOS instead of asking the CPU:
+
+```cpp
+#if OS(DARWIN)
+        s_avxCheckState = CPUIDCheckState::Set;   // never checks the CPU
+#else
+        // CPUID.1:ECX.AVX[28] + OSXSAVE[27] + XCR0[2:1] == 11b
+#endif
+```
+
+So the binary **started**, then died the moment any code tiered up. `-march` can't help — the JIT decides at runtime. The crash banner says it best: bun's own detection is right, and JSC ignores it.
+
+```
+Bun Canary v1.4.0-canary.1 (1e3511800) macOS x64 (baseline)
+CPU: sse42 popcnt          <-- no AVX
+```
+
+Fixed by [oven-sh/WebKit#292](https://github.com/oven-sh/WebKit/pull/292).
+
+Found by [@WolfgangFahl](https://github.com/WolfgangFahl), who tested the previous release on a real Mac Pro 5,1 and reported that startup was fixed but JIT-heavy work still crashed — [opencode#8345](https://github.com/anomalyco/opencode/issues/8345#issuecomment-4977006296). That isolated it to the JIT rather than the build flags.
+
+|  | Sandy / Ivy Bridge | Westmere and older |
+|---|---|---|
+| bug 1 (startup) | hit it | hit it |
+| bug 2 (JIT) | **not affected** — the hardcode is true for them | hit it |
 
 ## Does it actually work?
 
-| binary | AVX2 (`ymm`) instructions |
-|---|---|
-| shipped `opencode-darwin-x64-baseline` | 248,019 |
-| **this `opencode-darwin-x64-baseline`** | **14,407** |
-| shipped `@oven/bun-linux-x64-baseline` *(known-good on real pre-AVX2 hardware)* | 12,328 |
+Yes — verified on two independent machines.
 
-A baseline build isn't "zero AVX2" — the residual sits behind CPUID runtime dispatch. What matters is the profile matches the **linux** baseline, which I verified on a real pre-AVX2 CPU (Sandy Bridge Xeon, AVX + SSE4.2, no AVX2): the linux baseline runs `opencode run "say hi"` to completion, while the AVX2 build crashes (~21 s, ~3.9 GB RSS, segfault).
+**Real pre-AVX Mac** — Mac Pro 5,1, Xeon X5690 (Westmere, 2010), macOS 14.7.8, tested by [@WolfgangFahl](https://github.com/WolfgangFahl):
 
-**Honest caveat:** I could not test the *macOS* binaries on a real pre-AVX2 Mac — no cloud provider rents one. The evidence is (a) the AVX2 profile above, and (b) the same `-march=nehalem` recipe empirically working on pre-AVX2 silicon on linux. If you try it on a real Mac, please report back.
+| test | previous release | **this release** |
+|---|---|---|
+| `bun --version` | ✅ rc=0 | ✅ rc=0 |
+| JIT-heavy loop | ❌ rc=132 SIGILL | ✅ rc=0 |
+| `opencode --version` | ❌ rc=132 SIGILL | ✅ rc=0 |
+
+**Apple M1 under Rosetta 2** (macOS 14.6.1) — Rosetta reports no AVX, so it reproduces the pre-AVX Mac case on rentable hardware. Results match the X5690 exactly. A 14-case suite covering YarrJIT SIMD regex, strings/UTF-8, JSON, DFG/FTL tier-up and typed arrays: **all pass**; the previous release SIGILLs partway through the same suite on the same machine.
+
+Instruction profile of `libJavaScriptCore.a` (7,458,903 disassembled lines): **0** `%ymm` (a true baseline), **1** `xgetbv` (the runtime AVX check is present).
 
 ## How they were built
 
-Host: Ubuntu, x86_64. Nothing here is a fork — both use the projects' own build scripts.
+Host: Ubuntu, x86_64. Both projects' own build scripts, plus the one open upstream patch.
 
-**1. Baseline macOS WebKit** — oven-sh/WebKit's own cross-compile recipe, with the one flag that's never been used together with macOS:
+**1. Baseline macOS WebKit**, with the AVX runtime-detection fix:
 
 ```bash
 git clone https://github.com/oven-sh/WebKit && cd WebKit
 git checkout 4895f45dfbd0d1226c4d41799887bc0ecb9f341b   # bun main's WEBKIT_VERSION
+# apply https://github.com/oven-sh/WebKit/pull/292  (8 insertions, 6 deletions)
 MACOS_ARCH=x86_64 MARCH_FLAG="-march=nehalem" WEBKIT_RELEASE_TYPE=Release \
 USE_MIMALLOC=ON USE_EXTERNAL_MIMALLOC=ON bash macos-cross-release.sh
-# -> libJavaScriptCore.a with 0 AVX2 instructions (vs 58,967 in the shipped one)
 ```
 
 **2. bun** — stage that WebKit where bun expects its prebuilt, then build:
 
 ```bash
-cp -a bun-webkit/. ~/.bun/build-cache/webkit-4895f45dfbd0d122-macos-baseline/
-rm -rf ~/.bun/build-cache/webkit-4895f45dfbd0d122-macos-baseline/include/unicode
-printf '4895f45dfbd0d1226c4d41799887bc0ecb9f341b-baseline' > .../.identity
+DEST=~/.bun/build-cache/webkit-4895f45dfbd0d122-macos-baseline
+cp -a bun-webkit/. "$DEST"/
+rm -rf "$DEST/include/unicode"      # real darwin prebuilt strips bundled ICU headers
+printf '4895f45dfbd0d1226c4d41799887bc0ecb9f341b-baseline' > "$DEST/.identity"
 bun scripts/build.ts --profile=release --os=darwin --arch=x64 --baseline=true --lto=off
 ```
 
 **3. opencode** — stage that bun as the compile runtime, then use opencode's own build:
 
 ```bash
-cp build/release/bun ~/.bun/install/cache/bun-darwin-x64-baseline-v1.3.14
-bun packages/opencode/script/build.ts    # targets trimmed to darwin-x64 avx2:false
+cp build/release/bun ~/.bun/install/cache/bun-darwin-x64-baseline-v$(bun --version)
+git clone --depth 1 --branch v1.18.1 https://github.com/anomalyco/opencode
+cd opencode && bun install
+# targets trimmed to { os: "darwin", arch: "x64", avx2: false }
+export OPENCODE_VERSION=1.18.1      # tag clone = detached HEAD = empty channel = 0.0.0--<ts>
+cd packages/opencode && bun script/build.ts --skip-embed-web-ui
 ```
 
-## Upstream fix
+## Upstream fixes
 
-These artifacts are a stopgap. The real fix is two small PRs:
+These artifacts are a stopgap. The real fixes are three small PRs:
 
-- **oven-sh/WebKit** — add a `bun-webkit-macos-amd64-baseline` lane: `<PR link>`
-- **oven-sh/bun** — add `{ os: "darwin", arch: "x64", baseline: true, … }` to `buildPlatforms`: `<PR link>`
+| PR | What it does | Who it helps |
+|---|---|---|
+| [oven-sh/WebKit#290](https://github.com/oven-sh/WebKit/pull/290) | builds and publishes the missing `bun-webkit-macos-amd64-baseline` artifact | every pre-Haswell Mac |
+| [oven-sh/bun#34207](https://github.com/oven-sh/bun/pull/34207) | adds the `darwin-x64-baseline` build lane that consumes it | every pre-Haswell Mac |
+| [oven-sh/WebKit#292](https://github.com/oven-sh/WebKit/pull/292) | makes JSC check the CPU for AVX on macOS instead of assuming it | pre-AVX Macs (Westmere and older) |
+
+Also tracked in [bun#32512](https://github.com/oven-sh/bun/issues/32512), a guardrail so a mislabeled "baseline" macOS build can't silently ship again.
 
 ## Provenance
 
-- bun: built from `main` @ `1e35118008` (reports as `1.4.0-dev`, **not** an official 1.3.14 baseline)
-- opencode: `v1.18.1`, compiled against the bun above
-- WebKit: `4895f45dfbd0d1226c4d41799887bc0ecb9f341b`
+- **bun**: built from `main` @ `1e35118008`. It self-reports `1.4.0-canary.1` — it is **not** an official 1.3.14/1.18.x baseline. The release tag tracks opencode's version, not bun's.
+- **opencode**: `v1.18.1`, compiled against the bun above.
+- **WebKit**: `4895f45dfbd0d1226c4d41799887bc0ecb9f341b` + [#292](https://github.com/oven-sh/WebKit/pull/292).
 
 ```
-bede5eb3c917fa353d6b067fd7055d42774db7a7d5a09c21fa6cdd05e3d8efee  bun-darwin-x64-baseline
-7daf210676d2efa9627619ab1823b141c861aa362f8a828db836472d9790e61f  opencode-darwin-x64-baseline
+873868a92fc1de5eb3bbae81a85e234186eb00f2b51da956e1835017d813d824  bun-darwin-x64-baseline
+afe0fe21fc9b6ea43c33239aac990bb180c1025cc2d7044db5fab5ef4fc60915  opencode-darwin-x64-baseline
 ```
 
 ## License
