@@ -1,22 +1,12 @@
 # opencode-bun-pre-avx2-mac
 
+> ⚠️ **Known issue:** set `OPENCODE_DISABLE_AUTOUPDATE=true`. Autoupdate replaces this build with the latest **official** opencode build (AVX2) on first run, so the second launch crashes with `Illegal instruction: 4`. Keep it set for every run. See [issue #1](https://github.com/tobocop2/opencode-bun-pre-avx2-mac/issues/1).
+
 **Baseline (non-AVX2) macOS x64 builds of bun and opencode**, for pre-Haswell Intel Macs — the builds that don't exist upstream.
 
 **⬇️ Download:** [Releases](../../releases/latest)
 
 > ⚠️ **Unofficial.** Not affiliated with oven-sh or anomalyco. Built from their own sources with their own build scripts, plus one upstream patch that is open as a PR. Provided as proof the fix works, and as a stopgap until it lands.
-
-## ⚠️ Before first run: disable autoupdate
-
-This is a stopgap build and there will be no new releases here — but opencode's built-in autoupdater doesn't know that. The first time you run it, autoupdate replaces this build with the latest **official** opencode build (AVX2). The second run then dies with `Illegal instruction: 4`.
-
-Set this before your first run and keep it set for every run:
-
-```bash
-export OPENCODE_DISABLE_AUTOUPDATE=true
-```
-
-Without it: run 1 works, run 2 crashes. See [issue #1](https://github.com/tobocop2/opencode-bun-pre-avx2-mac/issues/1).
 
 ## Which Macs these work on
 
