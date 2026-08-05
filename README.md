@@ -4,7 +4,7 @@
 
 **Baseline (non-AVX2) macOS x64 builds of bun and opencode**, for pre-Haswell Intel Macs — the builds that don't exist upstream.
 
-**⬇️ Download:** [Releases](../../releases/latest)
+**⬇️ Download:** [Releases](../../releases/latest) ![Downloads](https://img.shields.io/github/downloads/tobocop2/opencode-bun-pre-avx2-mac/total)
 
 > ⚠️ **Unofficial.** Not affiliated with oven-sh or anomalyco. Built from their own sources with their own build scripts, plus one upstream patch that is open as a PR. Provided as proof the fix works, and as a stopgap until it lands.
 
